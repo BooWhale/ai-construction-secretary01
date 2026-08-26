@@ -227,11 +227,11 @@ else:
             st.rerun()
 
     # =============================================================
-    # 📌 ส่วนหน้าจอสำหรับ "พนักงาน" (Employee)
+    # 📌 ส่วนหน้าจอสำหรับ "พนักงาน" (Employee) - บังคับเลือกจากงานที่มีอยู่
     # =============================================================
     if user['role'] == "Employee":
         st.title(f"🛠️ หน้าส่งงานและปฏิทินงาน - คุณ {user['fullname']}")
-        tab_cal, tab_my_tasks, tab_report_new = st.tabs(["📅 ปฏิทินงานของฉัน (Calendar)", "📋 รายการงาน & อัปเดต", "➕ ส่งรายงานงานใหม่"])
+        tab_cal, tab_update_task = st.tabs(["📅 ปฏิทินงานของฉัน (Calendar)", "✍️ อัปเดตความคืบหน้างาน (จากงานที่ได้รับมอบหมาย)"])
         
         conn = get_db_connection()
         my_tasks = pd.read_sql_query("SELECT * FROM tasks WHERE assignee_username=?", conn, params=(user['username'],))
@@ -245,74 +245,72 @@ else:
                 events = format_tasks_to_events(my_tasks)
                 calendar(events=events, options=calendar_options, key="emp_calendar")
 
-        with tab_my_tasks:
+        with tab_update_task:
             if my_tasks.empty:
-                st.info("ยังไม่มีงานที่ได้รับมอบหมาย")
+                st.info("💡 ขณะนี้คุณยังไม่มีงานที่ได้รับมอบหมายจากหัวหน้างาน")
             else:
+                st.subheader("📋 รายการงานที่ต้องรับผิดชอบ")
                 st.dataframe(my_tasks[['task_id', 'task_name', 'due_date', 'status', 'progress_note', 'last_updated']], use_container_width=True)
+                
                 st.divider()
-                st.subheader("✍️ อัปเดตความคืบหน้างาน")
-                with st.form("update_task_form"):
-                    task_options = {f"#{row['task_id']} - {row['task_name']}": row['task_id'] for _, row in my_tasks.iterrows()}
-                    selected_task_label = st.selectbox("เลือกงานที่ต้องการอัปเดต", list(task_options.keys()))
-                    selected_task_id = task_options[selected_task_label]
+                st.subheader("✍️ รายงานผลและเปลี่ยนสถานะงาน")
+                
+                # ตัวเลือกงานที่สร้างโดยหัวหน้า บังคับเลือกตาม ID เพื่อป้องกันการสร้างชื่อซ้ำ
+                task_options = {
+                    f"งาน #{row['task_id']} : {row['task_name']} (กำหนดส่ง: {row['due_date']})": row['task_id'] 
+                    for _, row in my_tasks.iterrows()
+                }
+                
+                selected_label = st.selectbox("📌 เลือกงานที่ต้องการรายงานผล:", list(task_options.keys()))
+                selected_id = task_options[selected_label]
+                
+                # ดึงข้อมูลเดิมมาแสดง
+                current_task_row = my_tasks[my_tasks['task_id'] == selected_id].iloc[0]
+                status_index = 0
+                if current_task_row['status'] == "In Progress":
+                    status_index = 1
+                elif current_task_row['status'] == "Completed":
+                    status_index = 2
+
+                with st.form("update_progress_form"):
+                    st.info(f"กำลังอัปเดตงาน: **{current_task_row['task_name']}**")
                     
-                    new_status = st.selectbox("สถานะปัจจุบัน", ["In Progress (กำลังทำ)", "Pending (รอดำเนินการ/ติดขัด)", "Completed (เสร็จสิ้น)"])
-                    progress_text = st.text_area("คำอธิบายความคืบหน้าล่าสุด")
-                    uploaded_img = st.file_uploader("แนบรูปภาพหน้างาน (JPG, PNG)", type=["jpg", "png", "jpeg"])
+                    new_status = st.selectbox(
+                        "🚦 ปรับสถานะงาน",
+                        ["Pending (ยังไม่เริ่ม/ติดขัด)", "In Progress (กำลังดำเนินการ)", "Completed (เสร็จสิ้นเรียบร้อย)"],
+                        index=status_index
+                    )
                     
-                    if st.form_submit_button("บันทึกการอัปเดต"):
+                    progress_text = st.text_area(
+                        "📝 รายละเอียดผลการดำเนินงาน / ความคืบหน้า",
+                        value=current_task_row['progress_note'] if current_task_row['progress_note'] else ""
+                    )
+                    
+                    uploaded_img = st.file_uploader("📸 แนบรูปภาพรายงานหน้างาน (JPG, PNG)", type=["jpg", "png", "jpeg"])
+                    
+                    if st.form_submit_button("💾 บันทึกและส่งรายงานความคืบหน้า", type="primary"):
                         status_clean = new_status.split(" ")[0]
                         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                        img_path = None
+                        img_path = current_task_row['image_path']
+                        
                         if uploaded_img:
-                            img_filename = f"task_{selected_task_id}_{int(datetime.now().timestamp())}.png"
+                            img_filename = f"task_{selected_id}_{int(datetime.now().timestamp())}.png"
                             img_path = os.path.join(UPLOAD_FOLDER, img_filename)
                             with open(img_path, "wb") as f:
                                 f.write(uploaded_img.getbuffer())
                         
                         conn = get_db_connection()
                         c = conn.cursor()
-                        if img_path:
-                            c.execute("UPDATE tasks SET status=?, progress_note=?, image_path=?, last_updated=? WHERE task_id=?", 
-                                      (status_clean, progress_text, img_path, now_str, selected_task_id))
-                        else:
-                            c.execute("UPDATE tasks SET status=?, progress_note=?, last_updated=? WHERE task_id=?", 
-                                      (status_clean, progress_text, now_str, selected_task_id))
+                        c.execute("""
+                            UPDATE tasks 
+                            SET status=?, progress_note=?, image_path=?, last_updated=? 
+                            WHERE task_id=?
+                        """, (status_clean, progress_text, img_path, now_str, selected_id))
                         conn.commit()
                         conn.close()
-                        st.success("✅ บันทึกความคืบหน้าเรียบร้อยแล้ว!")
+                        
+                        st.success(f"✅ บันทึกความคืบหน้างาน #{selected_id} เรียบร้อยแล้ว!")
                         st.rerun()
-
-        with tab_report_new:
-            st.subheader("➕ ส่งรายงานความคืบหน้างานใหม่")
-            with st.form("new_self_task_form"):
-                new_title = st.text_input("ชื่องาน / รายการที่กำลังดำเนินการ")
-                new_due = st.date_input("กำหนดส่ง / วันที่คาดว่าจะเสร็จ")
-                new_status_self = st.selectbox("สถานะเริ่มต้น", ["In Progress", "Pending", "Completed"])
-                new_desc = st.text_area("คำอธิบายรายละเอียดงาน / ผลการตรวจสอบ")
-                new_img = st.file_uploader("แนบรูปภาพหน้างานจริง", type=["jpg", "png", "jpeg"], key="self_img")
-                
-                if st.form_submit_button("ส่งรายงานให้หัวหน้า"):
-                    if new_title:
-                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                        img_path = None
-                        if new_img:
-                            img_filename = f"new_{user['username']}_{int(datetime.now().timestamp())}.png"
-                            img_path = os.path.join(UPLOAD_FOLDER, img_filename)
-                            with open(img_path, "wb") as f:
-                                f.write(new_img.getbuffer())
-                                
-                        conn = get_db_connection()
-                        c = conn.cursor()
-                        c.execute("INSERT INTO tasks (task_name, department, assignee_username, due_date, status, progress_note, image_path, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                  (new_title, user['department'], user['username'], str(new_due), new_status_self, new_desc, img_path, now_str))
-                        conn.commit()
-                        conn.close()
-                        st.success("✅ ส่งรายงานเข้าสู่ระบบและปฏิทินเรียบร้อยแล้ว!")
-                        st.rerun()
-                    else:
-                        st.error("กรุณากรอกชื่องาน")
 
     # =============================================================
     # 📌 ส่วนหน้าจอสำหรับ "หัวหน้า/ผู้บริหาร" (Manager)
@@ -333,7 +331,7 @@ else:
         tab_cal, tab_overview, tab_create, tab_delete, tab_ai, tab_chat = st.tabs([
             "📅 ปฏิทินงานรวมทุกคน (Calendar View)", 
             "📊 ตารางงาน & รูปภาพหน้างาน", 
-            "➕ มอบหมายงานใหม่",
+            "➕ มอบหมายงานใหม่", 
             "🗑️ ลบ/จัดการงานที่ผิดพลาด",
             "🤖 AI เลขาสรุปและส่ง LINE",
             "💬 ปรึกษา AI ผู้ช่วยบริหาร"
@@ -402,9 +400,6 @@ else:
                         else:
                             st.error("กรุณากรอกชื่องาน")
 
-        # =============================================================
-        # 📌 แท็บใหม่: ลบและจัดการงานที่ผิดพลาด
-        # =============================================================
         with tab_delete:
             st.subheader("🗑️ ลบรายการงานที่กรอกผิดพลาด")
             st.caption("เฉพาะหัวหน้า/ผู้บริหาร สามารถเลือกลบงานที่สร้างผิด หรือข้อมูลที่ไม่ถูกต้องออกจากระบบและปฏิทินได้")
@@ -412,7 +407,6 @@ else:
             if all_tasks.empty:
                 st.info("ไม่มีรายการงานในระบบให้ลบ")
             else:
-                # สร้างรายการตัวเลือกงาน
                 delete_options = {
                     f"#{row['task_id']} | {row['task_name']} (ผู้รับผิดชอบ: {row['assignee'] or 'ยังไม่ระบุ'}, กำหนดส่ง: {row['due_date']})": row['task_id']
                     for _, row in all_tasks.iterrows()
@@ -421,7 +415,6 @@ else:
                 selected_task_label = st.selectbox("เลือกงานที่ต้องการลบออกจากระบบ:", list(delete_options.keys()))
                 target_task_id = delete_options[selected_task_label]
                 
-                # แสดงรายละเอียดงานที่เลือกเพื่อตรวจทาน
                 selected_task_info = all_tasks[all_tasks['task_id'] == target_task_id].iloc[0]
                 with st.expander("🔍 ดูรายละเอียดงานที่เลือกก่อนลบ", expanded=True):
                     st.write(f"📌 **ชื่องาน:** {selected_task_info['task_name']}")
@@ -439,7 +432,6 @@ else:
                     conn = get_db_connection()
                     c = conn.cursor()
                     
-                    # ตรวจสอบว่ามีรูปภาพแนบอยู่หรือไม่ ถ้ามีให้ลบไฟล์รูปภาพด้วย
                     c.execute("SELECT image_path FROM tasks WHERE task_id=?", (target_task_id,))
                     row_img = c.fetchone()
                     if row_img and row_img[0] and os.path.exists(row_img[0]):
@@ -448,7 +440,6 @@ else:
                         except Exception:
                             pass
                     
-                    # ลบออกจากฐานข้อมูล
                     c.execute("DELETE FROM tasks WHERE task_id=?", (target_task_id,))
                     conn.commit()
                     conn.close()

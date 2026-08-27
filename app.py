@@ -13,7 +13,7 @@ from streamlit_calendar import calendar
 st.set_page_config(page_title="Executive Task & AI Consultant", layout="wide", page_icon="🏢")
 
 # Google Gemini API Key
-GEMINI_API_KEY = "AQ.Ab8RN6IefweRXHRKJUK5VQLgGwKmoiK2AlUIwwpgNluz_DwNPw"
+GEMINI_API_KEY = "AQ.Ab8RN6Kunr9nWeB3KCAG6T-ZnIub9062uHa3OybohkPeiIEdiA"
 
 # LINE Messaging API Credentials
 LINE_CHANNEL_ACCESS_TOKEN = "tczZhOEGhupttNJGtkFywMJDNsgTO5Wib99thpNy+ORanz1nyKP1roZw4HNTwu/sStmF4FO/WILjtMMXLRwqvjBs1TYHgSVgNnNdtIu7MrABP7SdLLYWZ+xtlosdlmE654odeJ0JDr/Y2uwFd9/hDQdB04t89/1O/w1cDnyilFU="

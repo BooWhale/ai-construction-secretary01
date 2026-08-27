@@ -26,20 +26,20 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # ==========================================
 # 2. ฟังก์ชันเรียกใช้งาน Native Google Gemini API (gemini-3.6-flash)
 # ==========================================
+# แทนที่ด้วย API Key ที่ได้มาใหม่จากหน้า aistudio.google.com/app/apikey
 def query_gemini_api(prompt_text):
     """ส่งคำขอไปยัง Google Gemini API"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY}"
     
     headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY
     }
     
     payload = {
         "contents": [
             {
-                "parts": [
-                    {"text": prompt_text}
-                ]
+                "parts": [{"text": prompt_text}]
             }
         ],
         "generationConfig": {
@@ -58,14 +58,7 @@ def query_gemini_api(prompt_text):
                 if parts:
                     return parts[0].get("text", "ไม่มีข้อความตอบกลับจากโมเดล")
             return "❌ ไม่พบข้อความตอบกลับจากระบบ"
-        else:
-            # Fallback หากโมเดลเปลี่ยนเวอร์ชัน
-            fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-            fallback_res = requests.post(fallback_url, headers=headers, json=payload, timeout=90)
-            if fallback_res.status_code == 200:
-                return fallback_res.json()["candidates"][0]["content"]["parts"][0]["text"]
-                
-            return f"❌ เกิดข้อผิดพลาดจาก Gemini API (Code {response.status_code}): {response.text}"
+        return f"❌ เกิดข้อผิดพลาดจาก Gemini API (Code {response.status_code}): {response.text}"
     except requests.exceptions.Timeout:
         return "⏳ เซิร์ฟเวอร์ AI กำลังประมวลผลข้อมูลขนาดใหญ่ กรุณากดลองใหม่อีกครั้ง"
     except Exception as e:

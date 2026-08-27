@@ -13,7 +13,7 @@ from streamlit_calendar import calendar
 st.set_page_config(page_title="Executive Task & AI Consultant", layout="wide", page_icon="🏢")
 
 # Google Gemini API Key
-GEMINI_API_KEY = "AQ.Ab8RN6Kunr9nWeB3KCAG6T-ZnIub9062uHa3OybohkPeiIEdiA"
+GEMINI_AUTH_KEY = "AQ.Ab8RN6Kunr9nWeB3KCAG6T-ZnIub9062uHa3OybohkPeiIEdiA"
 
 # LINE Messaging API Credentials
 LINE_CHANNEL_ACCESS_TOKEN = "tczZhOEGhupttNJGtkFywMJDNsgTO5Wib99thpNy+ORanz1nyKP1roZw4HNTwu/sStmF4FO/WILjtMMXLRwqvjBs1TYHgSVgNnNdtIu7MrABP7SdLLYWZ+xtlosdlmE654odeJ0JDr/Y2uwFd9/hDQdB04t89/1O/w1cDnyilFU="
@@ -27,13 +27,19 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # 2. ฟังก์ชันเรียกใช้งาน Native Google Gemini API (gemini-3.6-flash)
 # ==========================================
 # แทนที่ด้วย API Key ที่ได้มาใหม่จากหน้า aistudio.google.com/app/apikey
+# ==========================================
+# 2. ฟังก์ชันเรียกใช้งาน Gemini API ด้วย Auth Key (AQ.)
+# ==========================================
+
+
 def query_gemini_api(prompt_text):
-    """ส่งคำขอไปยัง Google Gemini API"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY}"
+    """ส่งคำขอไปยัง Google Generative Language API ด้วย Bearer Auth Key"""
+    # ตัด ?key= ออกจาก URL
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     
     headers = {
         "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY
+        "Authorization": f"Bearer {GEMINI_AUTH_KEY}"
     }
     
     payload = {
@@ -50,6 +56,12 @@ def query_gemini_api(prompt_text):
     
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=90)
+        
+        # กรณี 2.5-flash มีการปรับเปลี่ยน ให้ fallback ไป gemini-1.5-flash
+        if response.status_code == 404:
+            fallback_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+            response = requests.post(fallback_url, headers=headers, json=payload, timeout=90)
+
         if response.status_code == 200:
             result_json = response.json()
             candidates = result_json.get("candidates", [])

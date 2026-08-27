@@ -6,11 +6,19 @@ import os
 import json
 from datetime import datetime
 from streamlit_calendar import calendar
+from google import genai
+from google.genai import types
 
 # ==========================================
 # 1. ตั้งค่าระบบและ API KEYS
 # ==========================================
 st.set_page_config(page_title="Executive Task & AI Consultant", layout="wide", page_icon="🏢")
+
+# Google Gemini Auth Key รูปแบบ AQ.
+GEMINI_API_KEY = "AQ.Ab8RN6K0sAuZ038fIusPpEOSCBs3mXHXeDvKEH35U5SlXflxwg"
+
+# สร้าง Client ผ่าน Google GenAI SDK ตัวใหม่ล่าสุด
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # LINE Messaging API Credentials
 LINE_CHANNEL_ACCESS_TOKEN = "tczZhOEGhupttNJGtkFywMJDNsgTO5Wib99thpNy+ORanz1nyKP1roZw4HNTwu/sStmF4FO/WILjtMMXLRwqvjBs1TYHgSVgNnNdtIu7MrABP7SdLLYWZ+xtlosdlmE654odeJ0JDr/Y2uwFd9/hDQdB04t89/1O/w1cDnyilFU="
@@ -21,55 +29,24 @@ UPLOAD_FOLDER = "uploaded_images"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # ==========================================
-# 2. ฟังก์ชันเรียกใช้งาน Native Google Gemini API (gemini-3.6-flash)
+# 2. ฟังก์ชันเรียกใช้งานผ่าน New Google GenAI SDK
 # ==========================================
-# แทนที่ด้วย API Key ที่ได้มาใหม่จากหน้า aistudio.google.com/app/apikey
-# ==========================================
-# 2. ฟังก์ชันเรียกใช้งาน Gemini API ด้วย Auth Key (AQ.)
-# ==========================================
-# ==========================================
-# 2. ฟังก์ชันเรียกใช้งาน Native Google Gemini API
-# ==========================================
-GEMINI_API_KEY = "AQ.Ab8RN6Kunr9nWeB3KCAG6T-ZnIub9062uHa3OybohkPeiIEdiA"
-
 def query_gemini_api(prompt_text):
-    """ส่งคำขอไปยัง Google Gemini API ตามโครงสร้าง cURL มาตรฐาน"""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
-    
-    headers = {
-        "Content-Type": "application/json",
-        "X-goog-api-key": GEMINI_API_KEY
-    }
-    
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt_text}
-                ]
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.5,
-            "maxOutputTokens": 2048
-        }
-    }
-    
+    """ส่งคำขอผ่าน Google GenAI SDK รุ่นใหม่ รองรับคีย์ AQ. และโมเดลรุ่นปัจจุบัน"""
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=90)
-        if response.status_code == 200:
-            result_json = response.json()
-            candidates = result_json.get("candidates", [])
-            if candidates and "content" in candidates[0]:
-                parts = candidates[0]["content"].get("parts", [])
-                if parts:
-                    return parts[0].get("text", "ไม่มีข้อความตอบกลับจากโมเดล")
-            return "❌ ไม่พบข้อความตอบกลับจากระบบ"
-        return f"❌ เกิดข้อผิดพลาดจาก Gemini API (Code {response.status_code}): {response.text}"
-    except requests.exceptions.Timeout:
-        return "⏳ เซิร์ฟเวอร์ AI กำลังประมวลผลข้อมูลขนาดใหญ่ กรุณากดลองใหม่อีกครั้ง"
+        response = client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=prompt_text,
+            config=types.GenerateContentConfig(
+                temperature=0.5,
+                max_output_tokens=2048,
+            )
+        )
+        if response and response.text:
+            return response.text
+        return "❌ ไม่พบข้อความตอบกลับจากระบบ"
     except Exception as e:
-        return f"❌ ข้อผิดพลาดในการเชื่อมต่อ: {str(e)}"
+        return f"❌ ข้อผิดพลาดจากระบบ Google: {str(e)}"
 
 # ==========================================
 # 3. ฐานข้อมูล SQLite
@@ -260,7 +237,6 @@ else:
                 st.divider()
                 st.subheader("✍️ รายงานผลและเปลี่ยนสถานะงาน")
                 
-                # ตัวเลือกงานที่สร้างโดยหัวหน้า บังคับเลือกตาม ID เพื่อป้องกันการสร้างชื่อซ้ำ
                 task_options = {
                     f"งาน #{row['task_id']} : {row['task_name']} (กำหนดส่ง: {row['due_date']})": row['task_id'] 
                     for _, row in my_tasks.iterrows()
@@ -269,7 +245,6 @@ else:
                 selected_label = st.selectbox("📌 เลือกงานที่ต้องการรายงานผล:", list(task_options.keys()))
                 selected_id = task_options[selected_label]
                 
-                # ดึงข้อมูลเดิมมาแสดง
                 current_task_row = my_tasks[my_tasks['task_id'] == selected_id].iloc[0]
                 status_index = 0
                 if current_task_row['status'] == "In Progress":

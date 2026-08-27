@@ -1,5 +1,5 @@
+streamlit
 pandas
 requests
-google-genai
-pillow
 streamlit-calendar
+google-generativeai
